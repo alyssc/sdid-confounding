@@ -66,19 +66,35 @@ print(xtable(results))
 
 # Error/bias from sample size
 props <- seq(.1,.7,.05)
-stderrs <- rep(NA, length(props))
-ests <- rep(NA, length(props))
+stderrs4 <- rep(NA, length(props))
+stderrs2 <- rep(NA, length(props))
+ests4 <- rep(NA, length(props))
+ests2 <- rep(NA, length(props))
 
 for(i in 1:length(props)){
   newdat <- do.call(make_data,c(list(n=200, trt_prop=.5, d_prop_trt=props[i], d_prop_ctrl=props[i]),
                                 as.list(params[4,])))
   twfe_4 <- lm(y ~ trt*post*d + x*post*d, newdat)
-  stderrs[i] <- summary(twfe_4)$coefficients["trt:postTRUE:d","Std. Error"]
-  ests[i] <- summary(twfe_4)$coefficients["trt:postTRUE:d","Estimate"]
+  stderrs4[i] <- summary(twfe_4)$coefficients["trt:postTRUE:d","Std. Error"]
+  ests4[i] <- summary(twfe_4)$coefficients["trt:postTRUE:d","Estimate"]
+  
+  # misspecified model
+  twfe_2 <- lm(y ~ trt*post*d + x*post, newdat)
+  stderrs2[i] <- summary(twfe_2)$coefficients["trt:postTRUE:d","Std. Error"]
+  ests2[i] <- summary(twfe_2)$coefficients["trt:postTRUE:d","Estimate"]
 }
 
-plot(props, stderrs, xlab = "Proportion in subgroup D", ylab = "Standard Error of trt:post:d estimate")
-plot(props, ests, xlab = "Proportion in subgroup D", ylab = "trt:post:d estimate")
+bias4 <- ests4 + .2
+bias2 <- ests2 + .2
+
+plot(props, stderrs4, xlab = "Proportion in subgroup D", ylab = "Standard Error of trt:post:d estimate",col=3)
+points(props, stderrs2,col=2)
+legend('topright', legend = c('Misspecified model', 'Correct model'), col = c(2, 3), lty = 1)
+
+plot(props, bias2, xlab = "Proportion in subgroup D", ylab = "trt:post:d bias",col=2)
+points(props, bias4,col=3)
+legend('topright', legend = c('Misspecified model', 'Correct model'), col = c(2, 3), lty = 1)
+
 
 
 # Model misspecification
