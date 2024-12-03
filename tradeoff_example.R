@@ -2,9 +2,10 @@ library(xtable)
 library(ggplot2)
 library(broom)
 library(modelr)
+library(leaps)
 
 
-make_data <- function(n=10, trt_prop=.5, d_prop_trt=.1, d_prop_ctrl=.2, d_x=0, dtx_y=0, dx_y=0, noise=1){
+make_data <- function(n=100, trt_prop=.5, d_prop_trt=.1, d_prop_ctrl=.2, d_x=1, dtx_y=1, dx_y=1, noise=1, trt_effect_noise=.5){
   max.time <- 2
   trt.time <- 2
   
@@ -25,9 +26,10 @@ make_data <- function(n=10, trt_prop=.5, d_prop_trt=.1, d_prop_ctrl=.2, d_x=0, d
     ungroup()
   
   dat <- dat %>% mutate(
+    d_trt_effect = rnorm(1,.2,sd=trt_effect_noise),
     y0 = 1 + x*(tp+.2*d*dx_y+.1*d*tp*dtx_y) + trt + int + ((tp - 2.5)^2)/10,
-    y1 = 1 + x*(tp+.2*d*dx_y+.1*d*tp*dtx_y) + trt + int + (1-.2*d) + ((tp - 2.5)^2)/10,
-    y = 1 + x*(tp+.2*d*dx_y+.1*d*tp*dtx_y) + trt + int + treated*(1-.2*d) + ((tp - 2.5)^2)/10) %>%
+    y1 = 1 + x*(tp+.2*d*dx_y+.1*d*tp*dtx_y) + trt + int + (1-d_trt_effect*d) + ((tp - 2.5)^2)/10,
+    y = 1 + x*(tp+.2*d*dx_y+.1*d*tp*dtx_y) + trt + int + treated*(1-d_trt_effect*d) + ((tp - 2.5)^2)/10) %>%
     group_by(id) %>% mutate(y.diff = y - lag(y)) %>% ungroup()
   
   return(dat)
@@ -38,31 +40,27 @@ make_data_df <- function(params){
   return( do.call(make_data, as.list(params) ) )
 }
 
+
+# DGMs x regression models table ------------------------------------------
+
 params <- data.frame(d_x=  c(0,1,1,1),
                      dtx_y=c(0,0,0,1),
                      dx_y= c(0,0,1,1))
 
 results <- numeric(0)
 
+
 for(i in 1:dim(params)[1]){
-  newdat <- do.call(make_data,c(list(n=200, trt_prop=.5, d_prop_trt=.1, d_prop_ctrl=.2),
+  newdat <- do.call(make_data,c(list(n=200),
                                 as.list(params[i,])))
-  
-  # 1
   twfe_1 <- lm(y ~ trt*post*d, newdat)
   # summary(twfe_1)$coefficients[c("trt:postTRUE","trt:postTRUE:d"),]
-  
-  # 2
   twfe_2 <- lm(y ~ trt*post*d + x*post, newdat)
   # summary(twfe_2)$coefficients[c("trt:postTRUE","trt:postTRUE:d"),]
-  
-  # 3
   twfe_3 <- lm(y ~ trt*post*d + x*post + x*d, newdat)
   # summary(twfe_3)$coefficients[c("trt:postTRUE","trt:postTRUE:d"),]
   # Note: adjusting by x*d, similar to adjusting by x, does nothing for confounding
   # important part of confounding is the time-varying nature of the covariate? 
-  
-  # 4
   twfe_4 <- lm(y ~ trt*post*d + x*post*d, newdat)
   # summary(twfe_4)$coefficients[c("trt:postTRUE","trt:postTRUE:d"),]
   
@@ -77,15 +75,13 @@ print(xtable(results))
 
 
 
-# Error/bias from sample size ---------------------------------------------
+# Functions to calculate error/bias across params ---------------------------------------------
 
-NREP <- 100
-
-twfe_2 <- function(df){
-  return(lm(y~trt*post*d+x*post,data=df))
-}
-twfe_4 <- function(df){
-  return(lm(y~trt*post*d+x*post*d,data=df))
+true_satt <- function(data){
+  att <- data %>% 
+    filter(trt==1, tp==1) %>%
+    summarize(mean = mean(d_trt_effect))
+  return(att$mean[[1]])
 }
 
 simanalyze <- function(params){
@@ -97,6 +93,7 @@ simanalyze <- function(params){
   ests <- sim_data %>% 
     group_by(scenario,replicate) %>%
     nest() %>% 
+    mutate(true_satt=map_dbl(data, true_satt)) %>% 
     crossing(misspec = c(0,1)) %>%
     mutate(model = 
              case_when(misspec == 0 ~ map(data, ~lm(y ~ trt*post*d+x*post*d, data = .) ),
@@ -106,15 +103,20 @@ simanalyze <- function(params){
     unnest(coefs) %>% 
     filter(term == "trt:postTRUE:d") %>% 
     select(-c(statistic, p.value, term, data, model)) %>%
-    mutate(bias = estimate+.2)
+    mutate(bias = estimate-true_satt)
   
   return(list('data'=sim_data,'ests'=ests))
 }
 
+
+# Error across sample size ------------------------------------------------
+
+NREP <- 100
+
 vary_d_prop <- data.frame(expand.grid(
-  n=100, trt_prop=.5, 
+  n=100, 
   d_prop_trt=seq(.02,.2,.02), 
-  d_x=1, dtx_y=1, dx_y=1, noise=1,
+  d_x=1, dtx_y=1, dx_y=1, noise=1,trt_effect_noise=0,
   replicate = 1:NREP)) %>%
   mutate(d_prop_ctrl=d_prop_trt,
          scenario=rep(1:(n()/NREP), NREP)) 
@@ -133,26 +135,75 @@ ests <- simdat$ests %>%
 
 ggplot(ests, aes(x=factor(d_count), y=bias, fill=factor(misspec))) + 
   geom_boxplot() +
-  labs(title = sprintf("Bias over multiple replications, nrep=%s, n=100", NREP),
+  labs(title = sprintf("Bias across subgroup size, nrep=%s, n=100", NREP),
        x="# of units in subgroup D", y="Bias of subgroup-specific estimate") +
   scale_fill_discrete(name = "Model type", labels = c("TWFE4 (correct)","TWFE2 (misspecified)"))
 
 ggsave("plots/bias_vary_d_prop.png",width=6,height=4)
 
+ggplot(ests, aes(x=factor(d_count), y=std.error, fill=factor(misspec))) + 
+  geom_boxplot() +
+  labs(title = sprintf("Std error across subgroup size, nrep=%s, n=100", NREP),
+       x="# of units in subgroup D", y="Std error of subgroup-specific estimate") +
+  scale_fill_discrete(name = "Model type", labels = c("TWFE4 (correct)","TWFE2 (misspecified)"))
+
+ggsave("plots/std_error_vary_d_prop.png",width=6,height=4)
+
+
+# Error across sample size; plus heterogenous treatment effect
+
+vary_d_prop <- data.frame(expand.grid(
+  n=100, 
+  d_prop_trt=seq(.02,.2,.02), 
+  d_x=1, dtx_y=1, dx_y=1, noise=1,trt_effect_noise=0,
+  replicate = 1:NREP)) %>%
+  mutate(d_prop_ctrl=d_prop_trt,
+         scenario=rep(1:(n()/NREP), NREP)) 
+
+simdat <- simanalyze(vary_d_prop)
+
+scenario_to_count <- simdat$data %>% 
+  ungroup() %>%
+  filter(replicate ==1, post==0) %>%
+  select(scenario, d) %>%
+  group_by(scenario) %>%
+  summarize(d_count = sum(d))
+
+ests <- simdat$ests %>%
+  inner_join(scenario_to_count, by="scenario")
+
+ggplot(ests, aes(x=factor(d_count), y=bias, fill=factor(misspec))) + 
+  geom_boxplot() +
+  labs(title = sprintf("Bias across subgroup size, nrep=%s, n=100", NREP),
+       x="# of units in subgroup D", y="Bias of subgroup-specific estimate") +
+  scale_fill_discrete(name = "Model type", labels = c("TWFE4 (correct)","TWFE2 (misspecified)"))
+
+ggsave("plots/bias_vary_d_prop_hetero_effect.png",width=6,height=4)
+
+ggplot(ests, aes(x=factor(d_count), y=std.error, fill=factor(misspec))) + 
+  geom_boxplot() +
+  labs(title = sprintf("Std error across subgroup size, nrep=%s, n=100", NREP),
+       x="# of units in subgroup D", y="Bias of subgroup-specific estimate") +
+  scale_fill_discrete(name = "Model type", labels = c("TWFE4 (correct)","TWFE2 (misspecified)"))
+
+ggsave("plots/std_error_vary_d_prop_hetero_effect.png",width=6,height=4)
+
 
 # Varying D control group size only
-NREP=10
+
+NREP=100
 vary_d_ctrl <- data.frame(expand.grid(
   n=100, trt_prop=.5, 
   d_prop_trt=.02,
-  d_prop_ctrl=seq(.02,.2,.05),
+  d_prop_ctrl=seq(.02,.3,.05),
   d_x=1, dtx_y=1, dx_y=1,noise=1,
   replicate = 1:NREP)) %>%
   mutate(scenario=rep(1:(n()/NREP), NREP)) 
 
 simdat <- simanalyze(vary_d_ctrl)
+vals = seq(.02,.3,.05)
 scenario_vals <- data.frame(
-  vals = seq(.02,.2,.05),
+  vals = vals,
   scenario = 1:length(vals)
 )
 
@@ -167,9 +218,17 @@ ggplot(ests, aes(x=factor(vals), y=bias, fill=factor(misspec))) +
 
 ggsave("plots/bias_vary_d_ctrl.png",width=6,height=4)
 
+ggplot(ests, aes(x=factor(vals), y=std.error, fill=factor(misspec))) + 
+  geom_boxplot() +
+  labs(title = sprintf("Keeping prop_d_trt=.02 constant, nrep=%s, n=100", NREP),
+       x="prop_d_ctrl", y="Std error of subgroup-specific estimate") +
+  scale_fill_discrete(name = "Model type", labels = c("TWFE4 (correct)","TWFE2 (misspecified)"))
+
+ggsave("plots/std_error_vary_d_ctrl.png",width=6,height=4)
+
 
 # Does increasing noise do anything?
-NREP=10
+NREP=100
 vary_noise <- data.frame(expand.grid(
   n=100, trt_prop=.5, 
   d_prop_trt=.04,
@@ -197,6 +256,84 @@ ggplot(ests, aes(x=factor(vals), y=bias, fill=factor(misspec))) +
 ggsave("plots/bias_varynoise.png",width=6,height=4)
 
 
+# What about increasing treatment effect heterogeneity to d-specific trt effect? 
+
+NREP=100
+vary_trteffectnoise <- data.frame(expand.grid(
+  n=100, trt_prop=.5, 
+  d_prop_trt=.04,
+  d_prop_ctrl=.04,
+  d_x=1, dtx_y=1, dx_y=1,noise=1,
+  trt_effect_noise = seq(1,10,1),
+  replicate = 1:NREP)) %>%
+  mutate(scenario=rep(1:(n()/NREP), NREP)) 
+
+simdat <- simanalyze(vary_trteffectnoise)
+vals <- seq(1,10,1)
+scenario_vals <- data.frame(
+  vals = vals,
+  scenario = 1:length(vals)
+)
+
+ests <- simdat$ests  %>%
+  inner_join(scenario_vals, by="scenario")
+
+ggplot(ests, aes(x=factor(vals), y=bias, fill=factor(misspec))) + 
+  geom_boxplot() +
+  labs(title = sprintf("Adding d-trt effect heterogeneity, prop_d_trt/ctrl=.04, nrep=%s, n=100", NREP),
+       x="SD of unit-level d-trt effect", y="Bias of subgroup-specific estimate") +
+  scale_fill_discrete(name = "Model type", labels = c("TWFE4 (correct)","TWFE2 (misspecified)"))
+
+ggsave("plots/bias_varytrteffect.png",width=6,height=4)
+
+
+# Multiple covariates ----------------------------------------------------
+
+make_data_multX <- function(n=100, trt_prop=.5, d_prop_trt=.1, d_prop_ctrl=.2, noise=1, trt_effect_noise=.5){
+  max.time <- 2
+  trt.time <- 2
+  
+  # number of units in treated, treated&d, and ctrl&d respectively
+  trt_n <- round(trt_prop*n)
+  d_n_trt <- round( round(trt_prop*n)*d_prop_trt )
+  d_n_ctrl <- round( round((1-trt_prop)*n)*d_prop_ctrl )
+  # print(c(trt_n,d_n_trt,d_n_ctrl))
+  
+  dat <- expand.grid(id = c(1:n), tp = 1:max.time) %>% arrange(id,tp) %>% group_by(id) %>%
+    mutate(int=rnorm(1,0,sd=noise), # random intercept
+           trt=1*I(id <= trt_n), # treatment
+           d=1*I(id <= d_n_trt | (id > trt_n & id <= trt_n+d_n_ctrl) ), # subgroup indicator
+           x1=rnorm(1, mean = 1 - 0.5*trt, sd = 1),
+           x2=rnorm(1, mean = 1.2 - 0.6*trt + .2*d +.1*trt*d, sd = 1),
+           x3=rnorm(1, mean = 1.4 - 0.7*trt + .2*d +.1*trt*d, sd = 1),
+           x4=rnorm(1, mean = 1.6 - 0.8*trt + .2*d +.1*trt*d, sd = 1),
+           x5=rnorm(1, mean = 1.8 - 0.9*trt + .2*d +.1*trt*d, sd = 1),
+           post=I(tp >= trt.time), # indicator of post-treatment period
+           treated=I(post == 1 & trt == 1) # time-varying indicator if treated or not
+    ) %>% 
+    ungroup()
+  
+  dat <- dat %>% mutate(
+    d_trt_effect = rnorm(1,.2,sd=trt_effect_noise),
+    y0 = 1 + x1*tp + x2*tp + x3*(tp +.2*d)+  x4*(tp+.2*d+.1*d*tp) + x5*(tp+.2*d+.1*d*tp) + trt + int + ((tp - 2.5)^2)/10,
+    y1 = y0 + (1-d_trt_effect*d),
+    y = treated*y1+(1-treated)*y0  ) %>%
+    group_by(id) %>% mutate(y.diff = y - lag(y)) %>% ungroup()
+  
+  return(dat)
+}
+
+# make_data with df of parameters as input
+make_data_df_multX <- function(params){
+  return( do.call(make_data, as.list(params) ) )
+}
+
+data <- make_data_multX()
+
+subset <- regsubsets(y~trt*post*d+x1*post*d+x2*post*d+x3*post*d+x4*post*d+x5*post*d, 
+                     force.in=c(1:8), 
+                     data=data)
+summary(subset)
 
 # Error/bias from sample size - original version -----------------------------------------------
 
