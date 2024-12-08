@@ -2,8 +2,6 @@ library(xtable)
 library(ggplot2)
 library(broom)
 library(modelr)
-library(leaps)
-
 
 make_data <- function(n=100, trt_prop=.5, d_prop_trt=.1, d_prop_ctrl=.2, d_x=1, dtx_y=1, dx_y=1, noise=1, trt_effect_noise=.5){
   max.time <- 2
@@ -26,10 +24,10 @@ make_data <- function(n=100, trt_prop=.5, d_prop_trt=.1, d_prop_ctrl=.2, d_x=1, 
     ungroup()
   
   dat <- dat %>% mutate(
-    d_trt_effect = rnorm(1,.2,sd=trt_effect_noise),
+    d_trt_effect = rnorm(1,-.2,sd=trt_effect_noise),
     y0 = 1 + x*(tp+.2*d*dx_y+.1*d*tp*dtx_y) + trt + int + ((tp - 2.5)^2)/10,
-    y1 = 1 + x*(tp+.2*d*dx_y+.1*d*tp*dtx_y) + trt + int + (1-d_trt_effect*d) + ((tp - 2.5)^2)/10,
-    y = 1 + x*(tp+.2*d*dx_y+.1*d*tp*dtx_y) + trt + int + treated*(1-d_trt_effect*d) + ((tp - 2.5)^2)/10) %>%
+    y1 = y0 + (1+d_trt_effect*d),
+    y = treated*y1+(1-treated)*y0  ) %>%
     group_by(id) %>% mutate(y.diff = y - lag(y)) %>% ungroup()
   
   return(dat)
@@ -227,6 +225,44 @@ ggplot(ests, aes(x=factor(vals), y=std.error, fill=factor(misspec))) +
 ggsave("plots/std_error_vary_d_ctrl.png",width=6,height=4)
 
 
+
+
+NREP=100
+vary_d_ctrl <- data.frame(expand.grid(
+  n=100, trt_prop=.5, 
+  d_prop_trt=.05,
+  d_prop_ctrl=seq(.02,.3,.05),
+  d_x=1, dtx_y=1, dx_y=1,noise=1,
+  replicate = 1:NREP)) %>%
+  mutate(scenario=rep(1:(n()/NREP), NREP)) 
+
+simdat <- simanalyze(vary_d_ctrl)
+vals = seq(.02,.3,.05)
+scenario_vals <- data.frame(
+  vals = vals,
+  scenario = 1:length(vals)
+)
+
+ests <- simdat$ests  %>%
+  inner_join(scenario_vals, by="scenario")
+
+ggplot(ests, aes(x=factor(vals), y=bias, fill=factor(misspec))) + 
+  geom_boxplot() +
+  labs(title = sprintf("Keeping prop_d_trt=.05 constant, nrep=%s, n=100", NREP),
+       x="prop_d_ctrl", y="Bias of subgroup-specific estimate") +
+  scale_fill_discrete(name = "Model type", labels = c("TWFE4 (correct)","TWFE2 (misspecified)"))
+
+ggsave("plots/bias_vary_d_ctrl.png",width=6,height=4)
+
+ggplot(ests, aes(x=factor(vals), y=std.error, fill=factor(misspec))) + 
+  geom_boxplot() +
+  labs(title = sprintf("Keeping prop_d_trt=.05 constant, nrep=%s, n=100", NREP),
+       x="prop_d_ctrl", y="Std error of subgroup-specific estimate") +
+  scale_fill_discrete(name = "Model type", labels = c("TWFE4 (correct)","TWFE2 (misspecified)"))
+
+ggsave("plots/std_error_vary_d_ctrl.png",width=6,height=4)
+
+
 # Does increasing noise do anything?
 NREP=100
 vary_noise <- data.frame(expand.grid(
@@ -258,11 +294,11 @@ ggsave("plots/bias_varynoise.png",width=6,height=4)
 
 # What about increasing treatment effect heterogeneity to d-specific trt effect? 
 
-NREP=100
+NREP=50
 vary_trteffectnoise <- data.frame(expand.grid(
   n=100, trt_prop=.5, 
-  d_prop_trt=.04,
-  d_prop_ctrl=.04,
+  d_prop_trt=.1,
+  d_prop_ctrl=.1,
   d_x=1, dtx_y=1, dx_y=1,noise=1,
   trt_effect_noise = seq(1,10,1),
   replicate = 1:NREP)) %>%
@@ -314,9 +350,9 @@ make_data_multX <- function(n=100, trt_prop=.5, d_prop_trt=.1, d_prop_ctrl=.2, n
     ungroup()
   
   dat <- dat %>% mutate(
-    d_trt_effect = rnorm(1,.2,sd=trt_effect_noise),
+    d_trt_effect = rnorm(1,-.2,sd=trt_effect_noise),
     y0 = 1 + x1*tp + x2*tp + x3*(tp +.2*d)+  x4*(tp+.2*d+.1*d*tp) + x5*(tp+.2*d+.1*d*tp) + trt + int + ((tp - 2.5)^2)/10,
-    y1 = y0 + (1-d_trt_effect*d),
+    y1 = y0 + (1+d_trt_effect*d),
     y = treated*y1+(1-treated)*y0  ) %>%
     group_by(id) %>% mutate(y.diff = y - lag(y)) %>% ungroup()
   
@@ -325,15 +361,69 @@ make_data_multX <- function(n=100, trt_prop=.5, d_prop_trt=.1, d_prop_ctrl=.2, n
 
 # make_data with df of parameters as input
 make_data_df_multX <- function(params){
-  return( do.call(make_data, as.list(params) ) )
+  return( do.call(make_data_multX, as.list(params) ) )
 }
 
 data <- make_data_multX()
 
-subset <- regsubsets(y~trt*post*d+x1*post*d+x2*post*d+x3*post*d+x4*post*d+x5*post*d, 
-                     force.in=c(1:8), 
+small <- lm(y~trt*post*d+x1+x2+x3+x4+x5, 
+            data=data)
+correct <- lm(y~trt*post*d+x1*post+x2*post+x3*post+x4*post*d+x5*post*d, 
+              data=data)
+full <- lm(y~trt*post*d+x1*post*d+x2*post*d+x3*post*d+x4*post*d+x5*post*d, 
                      data=data)
-summary(subset)
+
+NREP=100
+params <- data.frame(expand.grid(
+  d_prop_trt=.1,
+  d_prop_ctrl=.1,
+  replicate = 1:NREP))
+
+
+simanalyze_multX <- function(params){
+  sim_data <- params %>% 
+    group_by(replicate) %>%
+    nest() %>% mutate(simdat=map(data,make_data_df_multX)) %>%
+    unnest(cols=c(simdat, data))
+  
+  ests <- sim_data %>% 
+    group_by(replicate) %>%
+    nest() %>% 
+    mutate(true_satt=map_dbl(data, true_satt)) %>% 
+    crossing(model_type = c("smallest","smaller","correct", "fuller", "fullest")) %>%
+    mutate(model_type = factor(model_type, levels=c("smallest","smaller","correct", "fuller", "fullest"))) %>% 
+    mutate(model = 
+             case_when(model_type == "smallest" ~ map(data, ~lm(y ~ trt*post*d+x1+x2+x3+x4+x5, data = .) ),
+                       model_type == "smaller" ~ map(data, ~lm(y ~ trt*post*d+x1*post+x2+x3+x4*post+x5*post*d, data = .) ),
+                       model_type == "correct" ~ map(data, ~lm(y ~ trt*post*d+x1*post+x2*post+x3*post+x4*post*d+x5*post*d, data = .) ),
+                       model_type == "fuller" ~ map(data, ~lm(y ~ trt*post*d+x1*post+x2*post+x3*post*d+x4*post*d+x5*post*d, data = .) ),
+                       model_type == "fullest" ~ map(data, ~lm(y ~ trt*post*d+x1*post*d+x2*post*d+x3*post*d+x4*post*d+x5*post*d, data = .) )
+             )) %>% 
+    mutate(coefs = map(model, broom::tidy)) %>%
+    unnest(coefs) %>% 
+    filter(term == "trt:postTRUE:d") %>% 
+    select(-c(statistic, p.value, term, data, model)) %>%
+    mutate(bias = estimate-true_satt)
+  
+  return(list('data'=sim_data,'ests'=ests))
+}
+
+
+simdat <- simanalyze_multX(params)
+
+ests <- simdat$ests
+
+ggplot(ests, aes(x=model_type, y=std.error)) + 
+  geom_boxplot() +
+  labs(title = "Standard error of misspecified and correct models",
+       x="Model Type", y="Standard Error") 
+
+ggplot(ests, aes(x=model_type, y=bias)) + 
+  geom_boxplot() +
+  labs(title = "Bias of misspecified and correct models",
+       x="Model Type", y="Bias") 
+
+
 
 # Error/bias from sample size - original version -----------------------------------------------
 
