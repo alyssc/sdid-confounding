@@ -6,7 +6,11 @@ library(modelr)
 
 # Data generation -- single covariate -------------------------------------
 
-make_data <- function(n=100, trt_prop=.5, d_prop_trt=.1, d_prop_ctrl=.2, d_x=1,dg_x=0, dtx_y=0, dx_y=0, noise=.2, trt_effect_noise=0, x_y=1){
+make_data <- function(n=100, trt_prop=.5, 
+                      d_prop_trt=.1, d_prop_ctrl=.2, 
+                      d_x=1,dg_x=0,
+                      noise=.2, trt_effect_noise=0, 
+                      xt_y=1, dtx_y=0, dx_y=0){
   max.time <- 2
   trt.time <- 2
   
@@ -28,7 +32,7 @@ make_data <- function(n=100, trt_prop=.5, d_prop_trt=.1, d_prop_ctrl=.2, d_x=1,d
   
   dat <- dat %>% mutate(
     d_trt_effect = rnorm(1,-.2,sd=trt_effect_noise),
-    y0 = 1 + x_y*x*(tp+.2*d*dx_y+.1*d*tp*dtx_y) + trt + int + ((tp - 2.5)^2)/10,
+    y0 = 1 + x*(xt_y * tp+.2*d*dx_y+.1*d*tp*dtx_y) + trt + int + ((tp - 2.5)^2)/10,
     y1 = y0 + (1+d_trt_effect*d),
     y = treated*y1+(1-treated)*y0  ) %>%
     group_by(id) %>% mutate(y.diff = y - lag(y)) %>% ungroup()
