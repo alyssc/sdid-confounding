@@ -2,6 +2,7 @@ library(xtable)
 library(ggplot2)
 library(broom)
 library(modelr)
+library(tidyverse)
 
 source("tradeoff_fn.R", local = knitr::knit_global())
 
@@ -310,14 +311,14 @@ ggplot(ests, aes(x=factor(vals), y=bias, fill=factor(misspec))) +
 
 ggsave("plots/bias_vary_dg_x.png",width=6,height=4)
 
-# How does bias from model misspecification change with changing Y~X?
+# How does bias from model misspecification change with changing Y~Xt?
 
 NREP=50
 vary_xy <- data.frame(expand.grid(
   n=100, trt_prop=.5, 
   d_prop_trt=.1,
   d_prop_ctrl=.1,
-  x_y=seq(1,6), dtx_y=1, dx_y=1,
+  xt_y=seq(1,6), dtx_y=1, dx_y=1,
   replicate = 1:NREP)) %>%
   mutate(scenario=rep(1:(n()/NREP), NREP)) 
 
@@ -333,11 +334,40 @@ ests <- simdat$ests  %>%
 
 ggplot(ests, aes(x=factor(vals), y=bias, fill=factor(misspec))) + 
   geom_boxplot() +
-  labs(title = sprintf("Increasing relationship Y~x", NREP),
+  labs(title = sprintf("Increasing relationship Y~xt", NREP),
        x="x_y", y="Bias of subgroup-specific estimate") +
   scale_fill_discrete(name = "Model type", labels = c("TWFE4 (correct)","TWFE2 (misspecified)"))
 
-ggsave("plots/bias_vary_xy.png",width=6,height=4)
+ggsave("plots/bias_vary_xty.png",width=6,height=4)
+
+
+
+NREP=50
+vary_xy <- data.frame(expand.grid(
+  n=100, trt_prop=.5, 
+  d_prop_trt=.1,
+  d_prop_ctrl=.1,
+  dtx_y=seq(1,6), xt_y=1, dx_y=1,
+  replicate = 1:NREP)) %>%
+  mutate(scenario=rep(1:(n()/NREP), NREP)) 
+
+simdat <- simanalyze(vary_xy)
+vals <- seq(0,6,1)
+scenario_vals <- data.frame(
+  vals = vals,
+  scenario = 1:length(vals)
+)
+
+ests <- simdat$ests  %>%
+  inner_join(scenario_vals, by="scenario")
+
+ggplot(ests, aes(x=factor(vals), y=bias, fill=factor(misspec))) + 
+  geom_boxplot() +
+  labs(title = sprintf("Increasing relationship Y~dtx", NREP),
+       x="x_dtx", y="Bias of subgroup-specific estimate") +
+  scale_fill_discrete(name = "Model type", labels = c("TWFE4 (correct)","TWFE2 (misspecified)"))
+
+ggsave("plots/bias_vary_dtx_y.png",width=6,height=4)
 
 
 
@@ -351,6 +381,7 @@ correct <- lm(y~trt*post*d+x1*post+x2*post+x3*post+x4*post*d+x5*post*d,
               data=data)
 full <- lm(y~trt*post*d+x1*post*d+x2*post*d+x3*post*d+x4*post*d+x5*post*d, 
                      data=data)
+
 
 NREP=100
 params <- data.frame(expand.grid(
