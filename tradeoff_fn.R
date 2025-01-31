@@ -2,15 +2,16 @@ library(xtable)
 library(ggplot2)
 library(broom)
 library(modelr)
+library(margins)
 
 
 # Data generation -- single covariate -------------------------------------
 
 make_data <- function(n=100, trt_prop=.5, 
                       d_prop_trt=.1, d_prop_ctrl=.2, 
-                      d_x=1,dg_x=0,
+                      d_x=1,dg_x=0,g_x=1,
                       noise=.2, trt_effect_noise=0, 
-                      xt_y=1, dtx_y=0, dx_y=0){
+                      xt_y=1, xdt_y=0, xd_y=0){
   max.time <- 2
   trt.time <- 2
   
@@ -24,7 +25,7 @@ make_data <- function(n=100, trt_prop=.5,
     mutate(int=rnorm(1,0,sd=noise), # random intercept
            trt=1*I(id <= trt_n), # treatment
            d=1*I(id <= d_n_trt | (id > trt_n & id <= trt_n+d_n_ctrl) ), # subgroup indicator
-           x=rnorm(1, mean = 1 - 0.5*trt + .2*d*d_x+.1*d*trt*dg_x, sd = 1),
+           x=rnorm(1, mean = 1 - g_x*0.5*trt + .2*d*d_x+.1*d*trt*dg_x, sd = 1),
            post=I(tp >= trt.time), # indicator of post-treatment period
            treated=I(post == 1 & trt == 1) # time-varying indicator if treated or not
     ) %>% 
@@ -32,7 +33,7 @@ make_data <- function(n=100, trt_prop=.5,
   
   dat <- dat %>% mutate(
     d_trt_effect = rnorm(1,-.2,sd=trt_effect_noise),
-    y0 = 1 + x*(xt_y * tp+.2*d*dx_y+.1*d*tp*dtx_y) + trt + int + ((tp - 2.5)^2)/10,
+    y0 = 1 + x*(xt_y * tp+.2*d*xd_y+.1*d*tp*xdt_y) + trt + int + ((tp - 2.5)^2)/10,
     y1 = y0 + (1+d_trt_effect*d),
     y = treated*y1+(1-treated)*y0  ) %>%
     group_by(id) %>% mutate(y.diff = y - lag(y)) %>% ungroup()
@@ -63,10 +64,10 @@ simanalyze <- function(params){
     group_by(scenario,replicate) %>%
     nest() %>% 
     mutate(true_satt=map_dbl(data, true_satt)) %>% 
-    crossing(misspec = c(0,1)) %>%
+    crossing(misspec = c(0,1)) %>% 
     mutate(model = 
-             case_when(misspec == 0 ~ map(data, ~lm(y ~ trt*post*d+x*post*d, data = .) ),
-                       misspec == 1 ~ map(data, ~lm(y ~ trt*post*d+x*post, data = .) )
+             case_when(misspec == 0 ~ map(data, function(data) lm(y ~ trt*post*d+x*post*d, data = data) ),
+                       misspec == 1 ~ map(data, function(data) lm(y ~ trt*post*d+x*post, data = data) )
              )) %>% 
     mutate(coefs = map(model, broom::tidy)) %>%
     unnest(coefs) %>% 

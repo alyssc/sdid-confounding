@@ -3,6 +3,8 @@ library(ggplot2)
 library(broom)
 library(modelr)
 library(tidyverse)
+library(margins)
+
 
 source("tradeoff_fn.R", local = knitr::knit_global())
 
@@ -10,8 +12,8 @@ source("tradeoff_fn.R", local = knitr::knit_global())
 # DGMs x regression models table ------------------------------------------
 
 params <- data.frame(d_x=  c(0,1,1,1),
-                     dtx_y=c(0,0,0,1),
-                     dx_y= c(0,0,1,1))
+                     xdt_y=c(0,0,0,1),
+                     xd_y= c(0,0,1,1))
 
 results <- numeric(0)
 
@@ -47,7 +49,7 @@ NREP <- 100
 vary_d_prop <- data.frame(expand.grid(
   n=100, 
   d_prop_trt=seq(.02,.2,.02), 
-  d_x=1, dtx_y=1, dx_y=1, noise=1,trt_effect_noise=0,
+  d_x=1, xdt_y=1, xd_y=1, noise=1,trt_effect_noise=0,
   replicate = 1:NREP)) %>%
   mutate(d_prop_ctrl=d_prop_trt,
          scenario=rep(1:(n()/NREP), NREP)) 
@@ -86,7 +88,7 @@ ggsave("plots/std_error_vary_d_prop.png",width=6,height=4)
 vary_d_prop <- data.frame(expand.grid(
   n=100, 
   d_prop_trt=seq(.02,.2,.02), 
-  d_x=1, dtx_y=1, dx_y=1, noise=1,trt_effect_noise=0,
+  d_x=1, xdt_y=1, xd_y=1, noise=1,trt_effect_noise=0,
   replicate = 1:NREP)) %>%
   mutate(d_prop_ctrl=d_prop_trt,
          scenario=rep(1:(n()/NREP), NREP)) 
@@ -127,7 +129,7 @@ vary_d_ctrl <- data.frame(expand.grid(
   n=100, trt_prop=.5, 
   d_prop_trt=.02,
   d_prop_ctrl=seq(.02,.3,.05),
-  d_x=1, dtx_y=1, dx_y=1,noise=1,
+  d_x=1, xdt_y=1, xd_y=1,noise=1,
   replicate = 1:NREP)) %>%
   mutate(scenario=rep(1:(n()/NREP), NREP)) 
 
@@ -163,7 +165,7 @@ vary_d_ctrl <- data.frame(expand.grid(
   n=100, trt_prop=.5, 
   d_prop_trt=.05,
   d_prop_ctrl=seq(.02,.3,.05),
-  d_x=1, dtx_y=1, dx_y=1,noise=1,
+  d_x=1, xdt_y=1, xd_y=1,noise=1,
   replicate = 1:NREP)) %>%
   mutate(scenario=rep(1:(n()/NREP), NREP)) 
 
@@ -200,7 +202,7 @@ vary_noise <- data.frame(expand.grid(
   n=100, trt_prop=.5, 
   d_prop_trt=.04,
   d_prop_ctrl=.04,
-  d_x=1, dtx_y=1, dx_y=1,noise=seq(1,10,1),
+  d_x=1, xdt_y=1, xd_y=1,noise=seq(1,10,1),
   replicate = 1:NREP)) %>%
   mutate(scenario=rep(1:(n()/NREP), NREP)) 
 
@@ -230,7 +232,7 @@ vary_trteffectnoise <- data.frame(expand.grid(
   n=100, trt_prop=.5, 
   d_prop_trt=.1,
   d_prop_ctrl=.1,
-  d_x=1, dtx_y=1, dx_y=1,noise=1,
+  d_x=1, xdt_y=1, xd_y=1,noise=1,
   trt_effect_noise = seq(1,10,1),
   replicate = 1:NREP)) %>%
   mutate(scenario=rep(1:(n()/NREP), NREP)) 
@@ -260,7 +262,7 @@ vary_dx <- data.frame(expand.grid(
   n=100, trt_prop=.5, 
   d_prop_trt=.1,
   d_prop_ctrl=.1,
-  d_x=seq(0,5,1), dtx_y=1, dx_y=1,
+  d_x=seq(0,5,1), xdt_y=1, xd_y=1,
   replicate = 1:NREP)) %>%
   mutate(scenario=rep(1:(n()/NREP), NREP)) 
 
@@ -289,7 +291,7 @@ vary_dgx <- data.frame(expand.grid(
   n=100, trt_prop=.5, 
   d_prop_trt=.1,
   d_prop_ctrl=.1,
-  dg_x=seq(0,8,1), dtx_y=1, dx_y=1,
+  dg_x=seq(0,8,1), xdt_y=1, xd_y=1,
   replicate = 1:NREP)) %>%
   mutate(scenario=rep(1:(n()/NREP), NREP)) 
 
@@ -318,7 +320,7 @@ vary_xy <- data.frame(expand.grid(
   n=100, trt_prop=.5, 
   d_prop_trt=.1,
   d_prop_ctrl=.1,
-  xt_y=seq(1,6), dtx_y=1, dx_y=1,
+  xt_y=seq(1,6), xdt_y=1, xd_y=1,
   replicate = 1:NREP)) %>%
   mutate(scenario=rep(1:(n()/NREP), NREP)) 
 
@@ -347,7 +349,7 @@ vary_xy <- data.frame(expand.grid(
   n=100, trt_prop=.5, 
   d_prop_trt=.1,
   d_prop_ctrl=.1,
-  dtx_y=seq(1,6), xt_y=1, dx_y=1,
+  xdt_y=seq(1,6), xt_y=1, xd_y=1,
   replicate = 1:NREP)) %>%
   mutate(scenario=rep(1:(n()/NREP), NREP)) 
 
@@ -367,7 +369,80 @@ ggplot(ests, aes(x=factor(vals), y=bias, fill=factor(misspec))) +
        x="x_dtx", y="Bias of subgroup-specific estimate") +
   scale_fill_discrete(name = "Model type", labels = c("TWFE4 (correct)","TWFE2 (misspecified)"))
 
-ggsave("plots/bias_vary_dtx_y.png",width=6,height=4)
+ggsave("plots/bias_vary_xdt_y.png",width=6,height=4)
+
+
+
+NREP=50
+vary_gx <- data.frame(expand.grid(
+  n=100, trt_prop=.5, 
+  d_prop_trt=.1,
+  d_prop_ctrl=.1,
+  g_x=seq(1,6), xt_y=1, xd_y=1, xdt_y=1,
+  replicate = 1:NREP)) %>%
+  mutate(scenario=rep(1:(n()/NREP), NREP)) 
+
+simdat <- simanalyze(vary_gx)
+vals <- seq(0,6,1)
+scenario_vals <- data.frame(
+  vals = vals,
+  scenario = 1:length(vals)
+)
+
+ests <- simdat$ests  %>%
+  inner_join(scenario_vals, by="scenario")
+
+ggplot(ests, aes(x=factor(vals), y=bias, fill=factor(misspec))) + 
+  geom_boxplot() +
+  labs(title = sprintf("Increasing relationship X~g", NREP),
+       x="g_x", y="Bias of subgroup-specific estimate") +
+  scale_fill_discrete(name = "Model type", labels = c("TWFE4 (correct)","TWFE2 (misspecified)"))
+
+ggsave("plots/bias_vary_g_x.png",width=6,height=4)
+
+
+# Making a function to make above processes easier to run
+
+defaults <- data.frame(n=100, trt_prop=.5, 
+                             d_prop_trt=.1,
+                             d_prop_ctrl=.1, xt_y=1, xd_y=1, xdt_y=1)
+
+vary_param_plot <- function(param_name = "g_x", 
+                            param_vals = seq(1,6,1), 
+                            param_defaults = data.frame(n=100),
+                            NREP = 2){
+  params <- data.frame(expand.grid(
+    c(setNames(list(param_vals), param_name), param_defaults, replicate = list(1:NREP) ))) %>%
+    mutate(scenario=rep(1:(n()/NREP), NREP)) 
+  
+  simdat <- simanalyze(params)
+  
+  vals <- param_vals
+  scenario_vals <- data.frame(
+    vals = vals,
+    scenario = 1:length(vals)
+  )
+  ests <- simdat$ests  %>%
+    inner_join(scenario_vals, by="scenario")
+  
+  ggplot(ests, aes(x=factor(vals), y=bias, fill=factor(misspec))) + 
+    geom_boxplot() +
+    labs(title = sprintf("Bias across values of %s", param_name),
+         x=param_name, y="Bias of subgroup-specific estimate") +
+    scale_fill_discrete(name = "Model type", labels = c("TWFE4 (correct)","TWFE2 (misspecified)"))
+  
+  ggsave(sprintf("plots/bias_vary_%s.png", param_name),width=6,height=4)
+  
+  ggplot(ests, aes(x=factor(vals), y=std.error, fill=factor(misspec))) + 
+    geom_boxplot() +
+    labs(title = sprintf("Std error across values of %s", param_name),
+         x=param_name, y="Std error of subgroup-specific estimate") +
+    scale_fill_discrete(name = "Model type", labels = c("TWFE4 (correct)","TWFE2 (misspecified)"))
+  
+  ggsave(sprintf("plots/std_error_vary_%s.png", param_name),width=6,height=4)
+}
+
+vary_param_plot(param_defaults = defaults, NREP=50)
 
 
 
