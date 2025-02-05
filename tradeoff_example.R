@@ -401,48 +401,9 @@ ggplot(ests, aes(x=factor(vals), y=bias, fill=factor(misspec))) +
 ggsave("plots/bias_vary_g_x.png",width=6,height=4)
 
 
-# Making a function to make above processes easier to run
-
 defaults <- data.frame(n=100, trt_prop=.5, 
-                             d_prop_trt=.1,
-                             d_prop_ctrl=.1, xt_y=1, xd_y=1, xdt_y=1)
-
-vary_param_plot <- function(param_name = "g_x", 
-                            param_vals = seq(1,6,1), 
-                            param_defaults = data.frame(n=100),
-                            NREP = 2){
-  params <- data.frame(expand.grid(
-    c(setNames(list(param_vals), param_name), param_defaults, replicate = list(1:NREP) ))) %>%
-    mutate(scenario=rep(1:(n()/NREP), NREP)) 
-  
-  simdat <- simanalyze(params)
-  
-  vals <- param_vals
-  scenario_vals <- data.frame(
-    vals = vals,
-    scenario = 1:length(vals)
-  )
-  ests <- simdat$ests  %>%
-    inner_join(scenario_vals, by="scenario")
-  
-  ggplot(ests, aes(x=factor(vals), y=bias, fill=factor(misspec))) + 
-    geom_boxplot() +
-    labs(title = sprintf("Bias across values of %s", param_name),
-         x=param_name, y="Bias of subgroup-specific estimate") +
-    scale_fill_discrete(name = "Model type", labels = c("TWFE4 (correct)","TWFE2 (misspecified)"))
-  
-  ggsave(sprintf("plots/bias_vary_%s.png", param_name),width=6,height=4)
-  
-  ggplot(ests, aes(x=factor(vals), y=std.error, fill=factor(misspec))) + 
-    geom_boxplot() +
-    labs(title = sprintf("Std error across values of %s", param_name),
-         x=param_name, y="Std error of subgroup-specific estimate") +
-    scale_fill_discrete(name = "Model type", labels = c("TWFE4 (correct)","TWFE2 (misspecified)"))
-  
-  ggsave(sprintf("plots/std_error_vary_%s.png", param_name),width=6,height=4)
-}
-
-vary_param_plot(param_defaults = defaults, NREP=50)
+                       d_prop_trt=.1,
+                       d_prop_ctrl=.1, xt_y=1, xd_y=1, xdt_y=1)
 
 
 
