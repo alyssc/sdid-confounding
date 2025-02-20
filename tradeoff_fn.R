@@ -9,9 +9,9 @@ library(margins)
 
 make_data <- function(n=100, trt_prop=.5, 
                       d_prop_trt=.1, d_prop_ctrl=.2, 
-                      d_x=1,dg_x=0,g_x=1,
-                      noise=.2, trt_effect_noise=0, 
-                      xt_y=1, xdt_y=0, xd_y=0){
+                      alpha_0=1, alpha_1=-.5, alpha_2=.2, alpha_3=.1,
+                      noise=.2, trt_effect_noise=0, x_noise = .1,
+                      beta_1=1, beta_2=.2, beta_3=.1){
   max.time <- 2
   trt.time <- 2
   
@@ -25,7 +25,7 @@ make_data <- function(n=100, trt_prop=.5,
     mutate(int=rnorm(1,0,sd=noise), # random intercept
            trt=1*I(id <= trt_n), # treatment
            d=1*I(id <= d_n_trt | (id > trt_n & id <= trt_n+d_n_ctrl) ), # subgroup indicator
-           x=rnorm(1, mean = 1 - g_x*0.5*trt + .2*d*d_x+.1*d*trt*dg_x, sd = 1),
+           x=rnorm(1, mean = alpha_0 + alpha_1*trt + alpha_2*d+alpha_3*d*trt, sd = x_noise),
            post=I(tp >= trt.time), # indicator of post-treatment period
            treated=I(post == 1 & trt == 1) # time-varying indicator if treated or not
     ) %>% 
@@ -33,7 +33,7 @@ make_data <- function(n=100, trt_prop=.5,
   
   dat <- dat %>% mutate(
     d_trt_effect = rnorm(1,-.2,sd=trt_effect_noise),
-    y0 = 1 + x*(xt_y * tp+.2*d*xd_y+.1*d*tp*xdt_y) + trt + int + ((tp - 2.5)^2)/10,
+    y0 = 1 + x*( beta_1*tp + beta_2*d + beta_3*d*tp) + trt + int + ((tp - 2.5)^2)/10,
     y1 = y0 + (1+d_trt_effect*d),
     y = treated*y1+(1-treated)*y0  ) %>%
     group_by(id) %>% mutate(y.diff = y - lag(y)) %>% ungroup()
@@ -81,9 +81,9 @@ simanalyze <- function(params){
 
 # Graphing param variation for single covariate ---------------------------
 
-vary_param_plot <- function(param_name = "g_x", 
-                            param_vals = seq(1,6,1), 
-                            param_defaults = data.frame(n=100),
+vary_param_plot <- function(param_name = "alpha_1", 
+                            param_vals = seq(.1,.6,.1), 
+                            param_defaults = data.frame(),
                             NREP = 2){
   params <- data.frame(expand.grid(
     c(setNames(list(param_vals), param_name), param_defaults, replicate = list(1:NREP) ))) %>%
@@ -99,22 +99,26 @@ vary_param_plot <- function(param_name = "g_x",
   ests <- simdat$ests  %>%
     inner_join(scenario_vals, by="scenario")
   
-  ggplot(ests, aes(x=factor(vals), y=bias, fill=factor(misspec))) + 
+  bias_plot <- ggplot(ests, aes(x=factor(vals), y=bias, fill=factor(misspec))) + 
     geom_boxplot() +
     labs(title = sprintf("Bias across values of %s", param_name),
          x=param_name, y="Bias of subgroup-specific estimate") +
     scale_fill_discrete(name = "Model type", labels = c("TWFE4 (correct)","TWFE2 (misspecified)"))
   
-  ggsave(sprintf("plots/bias_vary_%s.png", param_name),width=6,height=4)
+  ggsave(sprintf("plots/bias_vary_%s.png", param_name),plot = bias_plot, width=6,height=4)
   
-  ggplot(ests, aes(x=factor(vals), y=std.error, fill=factor(misspec))) + 
+  se_plot <- ggplot(ests, aes(x=factor(vals), y=std.error, fill=factor(misspec))) + 
     geom_boxplot() +
     labs(title = sprintf("Std error across values of %s", param_name),
          x=param_name, y="Std error of subgroup-specific estimate") +
     scale_fill_discrete(name = "Model type", labels = c("TWFE4 (correct)","TWFE2 (misspecified)"))
   
-  ggsave(sprintf("plots/std_error_vary_%s.png", param_name),width=6,height=4)
+  ggsave(sprintf("plots/std_error_vary_%s.png", param_name), plot = se_plot,width=6,height=4)
+  
+  return(ests %>% filter(misspec==1) %>% group_by(scenario) %>% summarize(mean_bias=mean(bias)))
 }
+
+
 
 # Data generation -- multiple covariates ----------------------------------
 

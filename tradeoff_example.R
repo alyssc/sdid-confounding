@@ -371,39 +371,27 @@ ggplot(ests, aes(x=factor(vals), y=bias, fill=factor(misspec))) +
 
 ggsave("plots/bias_vary_xdt_y.png",width=6,height=4)
 
+# Remove randomness
+# Error if we remove noise (perfect fit)
+misspec_bias <- vary_param_plot(param_name = "alpha_1", 
+                  param_vals = seq(.1,1,.1),
+                  param_defaults = data.frame(noise=.001,x_noise=.001),
+                  NREP = 50)
+
+empirical_bias <- misspec_bias$mean_bias
+
+# theoretical bias
+alpha_1 <- seq(.1,1,.1)
+alpha_3 <- .1
+beta_3 <- .1
+theoretical_bias <- beta_3*(alpha_1+alpha_3)
+
+comp_bias <- data.frame(empirical = empirical_bias, theoretical = theoretical_bias,
+                        difference = empirical_bias-theoretical_bias)
+
+xtable(comp_bias, digits = 4)
 
 
-NREP=50
-vary_gx <- data.frame(expand.grid(
-  n=100, trt_prop=.5, 
-  d_prop_trt=.1,
-  d_prop_ctrl=.1,
-  g_x=seq(1,6), xt_y=1, xd_y=1, xdt_y=1,
-  replicate = 1:NREP)) %>%
-  mutate(scenario=rep(1:(n()/NREP), NREP)) 
-
-simdat <- simanalyze(vary_gx)
-vals <- seq(0,6,1)
-scenario_vals <- data.frame(
-  vals = vals,
-  scenario = 1:length(vals)
-)
-
-ests <- simdat$ests  %>%
-  inner_join(scenario_vals, by="scenario")
-
-ggplot(ests, aes(x=factor(vals), y=bias, fill=factor(misspec))) + 
-  geom_boxplot() +
-  labs(title = sprintf("Increasing relationship X~g", NREP),
-       x="g_x", y="Bias of subgroup-specific estimate") +
-  scale_fill_discrete(name = "Model type", labels = c("TWFE4 (correct)","TWFE2 (misspecified)"))
-
-ggsave("plots/bias_vary_g_x.png",width=6,height=4)
-
-
-defaults <- data.frame(n=100, trt_prop=.5, 
-                       d_prop_trt=.1,
-                       d_prop_ctrl=.1, xt_y=1, xd_y=1, xdt_y=1)
 
 
 
