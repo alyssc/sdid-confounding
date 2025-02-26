@@ -49,9 +49,20 @@ make_data_df <- function(params){
 
 true_satt <- function(data){
   att <- data %>% 
-    filter(trt==1, tp==1) %>%
-    summarize(mean = mean(d_trt_effect))
+    filter(trt==1, tp==2, d==1) %>%
+    summarize(mean = mean(y1-y0))
   return(att$mean[[1]])
+}
+
+# Given a SDiD model, calculates estimate and SE of SATT for d=1
+est_satt <- function(model){
+  est <- data.frame(estimate=model$coefficients[["trt:postTRUE:d"]] + model$coefficients[["trt:postTRUE"]],
+                    std.error=sqrt(vcov(model)["trt:postTRUE:d","trt:postTRUE:d"] + 
+                              vcov(model)["trt:postTRUE","trt:postTRUE"]+ 
+                              2* vcov(model)["trt:postTRUE","trt:postTRUE:d"])
+  )
+  
+  return(est)
 }
 
 simanalyze <- function(params){
@@ -67,12 +78,11 @@ simanalyze <- function(params){
     crossing(misspec = c(0,1)) %>% 
     mutate(model = 
              case_when(misspec == 0 ~ map(data, function(data) lm(y ~ trt*post*d+x*post*d, data = data) ),
-                       misspec == 1 ~ map(data, function(data) lm(y ~ trt*post*d+x*post, data = data) )
+                     misspec == 1 ~ map(data, function(data) lm(y ~ trt*post*d+x*post, data = data) )
              )) %>% 
-    mutate(coefs = map(model, broom::tidy)) %>%
-    unnest(coefs) %>% 
-    filter(term == "trt:postTRUE:d")%>% 
-    select(-c(statistic, p.value, data, model)) %>%
+    mutate(satt = map(model, est_satt)) %>% 
+    unnest(satt) %>%
+    select(-c(data, model)) %>%
     mutate(bias = estimate-true_satt)
   
   return(list('data'=sim_data,'ests'=ests))
