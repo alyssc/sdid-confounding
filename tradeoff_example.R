@@ -1,9 +1,3 @@
-library(xtable)
-library(ggplot2)
-library(broom)
-library(modelr)
-library(tidyverse)
-library(margins)
 
 
 source("tradeoff_fn.R", local = knitr::knit_global())
@@ -371,50 +365,7 @@ ggplot(ests, aes(x=factor(vals), y=bias, fill=factor(misspec))) +
 
 ggsave("plots/bias_vary_xdt_y.png",width=6,height=4)
 
-# Decrease noise
-# Error if we remove noise (perfect fit)
-misspec_bias <- vary_param_plot(param_name = "alpha_1", 
-                  param_vals = seq(.1,1,.1),
-                  param_defaults = data.frame(noise=.001,x_noise=.001),
-                  NREP = 50)
 
-empirical_bias <- misspec_bias$mean_bias
-
-# theoretical bias
-alpha_1 <- seq(.1,1,.1)
-alpha_3 <- .1
-beta_3 <- .1
-theoretical_bias <- beta_3*(alpha_1+alpha_3)
-
-comp_bias <- data.frame(empirical = empirical_bias, theoretical = theoretical_bias,
-                        difference = empirical_bias-theoretical_bias)
-
-xtable(comp_bias, digits = 4)
-
-
-# Exploration: Why are empirical and theoretical results different? 
-
-data <- make_data()
-# defaults: 
-# alpha_0=1, alpha_1=-.5, alpha_2=.2, alpha_3=.1, 
-# beta_1=1, beta_2=.2, beta_3=.1
-correct <- lm(y ~ trt*post*d+x*post*d, data = data)
-misspec <- lm(y ~ trt*post*d+x*post, data = data)
-gamma_1_mis <- misspec$coefficients["postTRUE:x"]
-gamma_1 <- correct$coefficients["postTRUE:x"]
-gamma_3 <- correct$coefficients["postTRUE:d:x"]
-
-d_ATT_mis <- misspec$coefficients["trt:postTRUE"]+misspec$coefficients["trt:postTRUE:d"]
-d_ATT_cor <- correct$coefficients["trt:postTRUE"]+correct$coefficients["trt:postTRUE:d"]
-bias <- d_ATT_mis-d_ATT_cor
-# misspec$coefficients["trt:postTRUE:d"]-correct$coefficients["trt:postTRUE:d"]
-
-bias-b
-bias-a
-
-a <- -(gamma_1_mis-gamma_1-gamma_3)*(alpha_1+alpha_3)
-b <- (beta_3) * (alpha_1+alpha_3)
-b-a
 
 # Multiple covariates ----------------------------------------------------
 

@@ -2,6 +2,7 @@ library(xtable)
 library(ggplot2)
 library(broom)
 library(modelr)
+library(tidyverse)
 library(margins)
 
 
@@ -54,12 +55,15 @@ true_satt <- function(data){
   return(att$mean[[1]])
 }
 
-# Given a SDiD model, calculates estimate and SE of SATT for d=1
+# Given SDiD model coefficients, calculates estimate and SE of SATT for d=1
+# Also calculates empirical gamma coefs
 est_satt <- function(model){
   est <- data.frame(estimate=model$coefficients[["trt:postTRUE:d"]] + model$coefficients[["trt:postTRUE"]],
                     std.error=sqrt(vcov(model)["trt:postTRUE:d","trt:postTRUE:d"] + 
                               vcov(model)["trt:postTRUE","trt:postTRUE"]+ 
-                              2* vcov(model)["trt:postTRUE","trt:postTRUE:d"])
+                              2* vcov(model)["trt:postTRUE","trt:postTRUE:d"]),
+                    gamma_1 = model$coefficients["postTRUE:x"],
+                    gamma_3 = model$coefficients["postTRUE:d:x"]
   )
   
   return(est)
