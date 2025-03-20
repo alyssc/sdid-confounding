@@ -61,14 +61,12 @@ for(i in c(1:nreps)){
 
 hist(th.bias-int.biases)
 hist(emp.biases-th.bias)
-hist(emp.biases-int.biases, breaks=10) #centered at 0 !
+hist(emp.biases-int.biases, breaks=10) #centered at 0, which is good
 
 mean(emp.biases)
-
 mean(th.bias-int.biases)
 mean(emp.biases-th.bias)
 mean(emp.biases-int.biases, breaks=10) 
-
 
 summary(gamma_3s) #correctly specified model always correct gets beta.3
 summary(gamma_1s) #correctly specified model always correct gets beta.1
