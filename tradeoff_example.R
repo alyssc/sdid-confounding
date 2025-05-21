@@ -366,7 +366,6 @@ ggplot(ests, aes(x=factor(vals), y=bias, fill=factor(misspec))) +
 ggsave("plots/bias_vary_xdt_y.png",width=6,height=4)
 
 
-
 # Multiple covariates ----------------------------------------------------
 
 data <- make_data_multX()

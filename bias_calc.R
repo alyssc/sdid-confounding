@@ -26,7 +26,7 @@ xtable(comp_bias, digits = 4)
 
 
 # Exploration: Why are empirical and theoretical results different? 
-nreps <- 100
+nreps <- 20
 emp.biases <- rep(NA, nreps)
 int.biases <- rep(NA, nreps) # intermediate result. uses gammas which are empirical
 gamma_3s <- rep(NA, nreps)
@@ -53,7 +53,6 @@ for(i in c(1:nreps)){
   emp.biases[i] <- d_ATT_mis-d_ATT_cor
   
   # theoretical bias 1 is not obtainable from the data
-  # theoretical bias 2 is
   int.biases[i] <- -(gamma_1_mis-gamma_1-gamma_3) *(alpha_1+alpha_3)
   th.bias <- (beta_3) * (alpha_1+alpha_3)
 }

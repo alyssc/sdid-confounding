@@ -8,7 +8,58 @@ library(margins)
 
 # Data generation -- single covariate -------------------------------------
 
-make_data <- function(n=100, trt_prop=.5, 
+center_scale <- function(x){
+  (x - mean(x)) / sd(x) 
+}
+
+logit <- function(p){
+  return(log(p/(1-p)))
+}
+inv.logit <- function(x){
+  return(exp(x)/(1+exp(x)))
+}
+
+make_data <- function(n=100, d_prop=.1, 
+                          gamma = -.5, alpha_0 = -2.19,
+                          alpha_1=-.5, alpha_2=1, alpha_3=.1,
+                          noise=.2, trt_effect_noise=0, x_noise = .1,
+                          beta_1=1, beta_2=.2, beta_3=.1){
+  max.time <- 2
+  trt.time <- 2
+  
+  # number of units in d
+  d_n <- round( d_prop*n )
+  
+  dat <- expand.grid(id = c(1:n), tp = 1:max.time) %>% arrange(id,tp) %>% group_by(id) %>%
+    mutate(int=rnorm(1,0,sd=noise), # random intercept
+           d=1*I( id <= d_n ), # subgroup indicator
+           v0=rnorm(1, 0, 2), 
+           s0=rnorm(1,3,2), 
+           x=rnorm(1,gamma*d,1)) %>% # denoted W in notes 
+    ungroup() %>%
+    mutate(x_scale=center_scale(x),v_scale = center_scale(v0)) %>%
+    group_by(id) %>% 
+    mutate(
+           lp = alpha_0 + alpha_1*v_scale + alpha_2*x_scale + alpha_3 *x_scale * d, 
+           #alpha_0 to set prop. trted for average v0, average w
+           trt=rbinom(1,1,exp(lp)/(1+exp(lp))), 
+           post=I(tp >= trt.time), # indicator of post-treatment period
+           treated=I(post == 1 & trt == 1) # time-varying indicator if treated or not
+    ) %>% 
+    ungroup()
+  
+  dat <- dat %>% mutate(
+    d_trt_effect = rnorm(1,-.2,sd=trt_effect_noise),
+    y0 = 1 + x*( beta_1*tp + beta_2*d + beta_3*d*tp) + trt + s0 + int + ((tp - 2.5)^2)/10, #untreated PO
+    y1 = y0 + (1+d_trt_effect*d), # treated PO
+    y = treated*y1+(1-treated)*y0  ) %>% # observed outcome at time tp
+    group_by(id) %>% mutate(y.diff = y - lag(y)) %>% ungroup()
+  
+  return(dat)
+}
+
+# prev. version
+make_data_old <- function(n=100, trt_prop=.5, 
                       d_prop_trt=.1, d_prop_ctrl=.2, 
                       alpha_0=1, alpha_1=-.5, alpha_2=.2, alpha_3=.1,
                       noise=.2, trt_effect_noise=0, x_noise = .1,
@@ -98,7 +149,8 @@ simanalyze <- function(params){
 vary_param_plot <- function(param_name = "alpha_1", 
                             param_vals = seq(.1,.6,.1), 
                             param_defaults = data.frame(),
-                            NREP = 2){
+                            NREP = 2,
+                            save_plots = FALSE){
   params <- data.frame(expand.grid(
     c(setNames(list(param_vals), param_name), param_defaults, replicate = list(1:NREP) ))) %>%
     mutate(scenario=rep(1:(n()/NREP), NREP)) 
@@ -119,17 +171,19 @@ vary_param_plot <- function(param_name = "alpha_1",
          x=param_name, y="Bias of subgroup-specific estimate") +
     scale_fill_discrete(name = "Model type", labels = c("TWFE4 (correct)","TWFE2 (misspecified)"))
   
-  ggsave(sprintf("plots/bias_vary_%s.png", param_name),plot = bias_plot, width=6,height=4)
-  
   se_plot <- ggplot(ests, aes(x=factor(vals), y=std.error, fill=factor(misspec))) + 
     geom_boxplot() +
     labs(title = sprintf("Std error across values of %s", param_name),
          x=param_name, y="Std error of subgroup-specific estimate") +
     scale_fill_discrete(name = "Model type", labels = c("TWFE4 (correct)","TWFE2 (misspecified)"))
   
-  ggsave(sprintf("plots/std_error_vary_%s.png", param_name), plot = se_plot,width=6,height=4)
-  
-  return(ests %>% filter(misspec==1) %>% group_by(scenario) %>% summarize(mean_bias=mean(bias)))
+  if(save_plots){
+    ggsave(sprintf("plots/bias_vary_%s.png", param_name),plot = bias_plot, width=6,height=4)
+    ggsave(sprintf("plots/std_error_vary_%s.png", param_name), plot = se_plot,width=6,height=4)
+  }
+
+  bias_by_scenario <- ests %>% filter(misspec==1) %>% group_by(scenario) %>% summarize(mean_bias=mean(bias,na.rm=T ))
+  return(list(bias_by_scenario, bias_plot,se_plot) )
 }
 
 
